@@ -64,16 +64,14 @@ node tools/selftest.js
 ### 克隆这个仓库
 
 ```bash
-git clone --recursive https://github.com/SanJerry007/bilibili-cdn-optimizer.git
+git clone https://github.com/SanJerry007/bilibili-cdn-optimizer.git
 cd bilibili-cdn-optimizer
 git config core.hooksPath .githooks     # 要改这个仓库才需要这一步
 ```
 
 **第二行不能省，而且 git 不会替你做。** `core.hooksPath` 是本地仓库配置，不随克隆传递，所以刚克隆下来的副本不会用到这个仓库里的 `.githooks/`。git 这样设计是对的，否则克隆任何一个仓库都等于同意执行它带来的脚本，但代价是这一步必须写在文档里，不然下面那套 fail-closed 的安排永远不会启用。
 
-`guards/` 和 `style/` 是两个 submodule，装着这个仓库的检查工具（PII 扫描、数据边界、破折号闸门）。**不带 `--recursive` 克隆的话，这两个目录会存在但是空的**，这时提交会被明确挡下并告诉你跑 `git submodule update --init --recursive`。这是刻意的：空的 `guards/` 是一个没有防护的仓库，不是一个没什么可查的仓库，所以它必须大声失败，而不是静默放行。
-
-这一层间接不是多余的。实测对照：把 `core.hooksPath` 直接指向空的 `guards/hooks`，一个带着私人邮箱的提交**顺利落地、退出 0、没有任何输出**；换成指向仓内的 `.githooks/` 转发脚本，同一个提交被拦住，零个提交。
+检查工具（PII 扫描、数据边界、破折号闸门）不在这个仓库里：`.githooks/` 的转发脚本从 `git config fleet.guards` 和 `git config fleet.style` 指向的本机 fleet-guards、fleet-style checkout 运行它们。**两项配置任一没设，提交都会被明确挡下**，并说明是哪一项。这是刻意的：找不到检查工具的仓库是一个没有防护的仓库，不是一个没什么可查的仓库，所以它必须大声失败，而不是静默放行。
 
 工具只在这里用，不参与脚本本身的运行，所以只想用脚本的话不需要它们。
 

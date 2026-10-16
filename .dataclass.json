@@ -1,7 +1,7 @@
 {
   "_comment": [
-    "Every path in this repo belongs to exactly one class. Enforced by guards/tools/data_boundary.py,",
-    "which runs from .githooks and in CI.",
+    "Every path in this repo belongs to exactly one class. Enforced by data_boundary.py from the",
+    "fleet-guards checkout named by git config fleet.guards, run from .githooks.",
     "TOOL    = code, docs, tests. Public.",
     "FIXTURE = LIFELIKE test data, whose real counterpart sits in the operator's life and is",
     "          structurally indistinguishable from it. Must come from a generator, because a real",
