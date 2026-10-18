@@ -34,7 +34,7 @@
 
 ## 快速安裝（Chrome 擴充功能）
 
-1. 下載要用的那個版本的 zip 再解壓縮：
+1. 到 [Releases](https://github.com/A90ur5/bilibili-cdn-optimizer/releases) 下載要用的那個版本的 zip（檔名帶有版本號，說明裡附有 SHA-256 雜湊值可以核對），再解壓縮。也可以直接下載 repo 裡的：
    - B站CDN優選：[`bilibili-cdn-optimizer/chrome-extension.zip`](./bilibili-cdn-optimizer/chrome-extension.zip)
    - 台灣優化：[`bilibili-cdn-tw/chrome-extension-tw.zip`](./bilibili-cdn-tw/chrome-extension-tw.zip)
 2. 打開 `chrome://extensions`（Edge 是 `edge://extensions`），開啟「開發人員模式」
@@ -46,6 +46,7 @@
 
 - `tools/zip.js`：兩個版本的建置腳本共用的 zip 產生器。同樣的輸入每次都產生完全相同的 zip，CI 才比對得出 zip 有沒有過期。
 - `.github/workflows/selftest.yml`：CI，見下方「檢查」。
+- `.github/workflows/release.yml`、`tools/release.js`：發布 release，見下方「發布新版」。
 - `.githooks/`、`.dataclass.json`、`.pii-allow`：上游留下的提交前檢查設定，見下方「開發」。
 - `LICENSE`
 
@@ -72,6 +73,17 @@ node bilibili-cdn-tw/tools/build-extension-tw.js --check       # 台灣優化：
 
 CI 在每次 push 和 PR 都會跑這幾項，再加上腳本的語法檢查。各項檢查的細節見各資料夾的 README。修改腳本或 README 之後，執行同一支建置腳本但不加 `--check`，就會重新產生擴充功能和 zip。
 
+### 發布新版
+
+推送一個以 `v` 開頭的標籤，就會自動建立 release，並附上兩個 zip：
+
+```bash
+git tag v2026.10.18
+git push origin v2026.10.18
+```
+
+也可以在 GitHub 的 Actions 頁面手動執行 `release` 工作流程，輸入標籤名稱。工作流程會先確認兩個 zip 跟原始碼一致，不一致就不發布；release 說明由 `tools/release.js` 產生，內容包含版本、安裝步驟、安全審查連結和檔案雜湊值。
+
 ## 授權
 
 本 repo 依 [MIT](./LICENSE) 授權（LICENSE 檔的著作權人為 SanJerry007）。`bilibili-cdn-tw/` 裡的「Bilibili CDN 台灣優化」腳本及由它產生的檔案，著作權屬於 jiyunshi，依該腳本標頭宣告的 MIT 授權收錄。
@@ -89,7 +101,7 @@ This repository is a fork of [SanJerry007/bilibili-cdn-optimizer](https://github
 
 ### Quick install (Chrome extension)
 
-1. Download and unzip [`bilibili-cdn-optimizer/chrome-extension.zip`](./bilibili-cdn-optimizer/chrome-extension.zip) or [`bilibili-cdn-tw/chrome-extension-tw.zip`](./bilibili-cdn-tw/chrome-extension-tw.zip)
+1. Download a zip from [Releases](https://github.com/A90ur5/bilibili-cdn-optimizer/releases) (versioned file names, SHA-256 checksums in the notes), or [`bilibili-cdn-optimizer/chrome-extension.zip`](./bilibili-cdn-optimizer/chrome-extension.zip) / [`bilibili-cdn-tw/chrome-extension-tw.zip`](./bilibili-cdn-tw/chrome-extension-tw.zip) from the repo, and unzip it
 2. Open `chrome://extensions` (`edge://extensions` in Edge) and turn on *Developer mode*
 3. Click *Load unpacked* and pick the unzipped `chrome-extension` (or `chrome-extension-tw`) folder
 
@@ -104,6 +116,8 @@ node bilibili-cdn-tw/tools/build-extension-tw.js --check
 ```
 
 CI runs these, plus a syntax check of the userscript, on every push and pull request. Run a build script without `--check` to regenerate its extension and zip. `tools/zip.js` is the byte-stable zip writer both build scripts share.
+
+Pushing a tag that starts with `v` (or running the `release` workflow by hand) publishes a GitHub release with both zips; the workflow refuses to release if either zip is stale, and `tools/release.js` writes the notes.
 
 `.githooks/` comes from upstream and needs the upstream author's local fleet-guards and fleet-style tools; without them, do not set `core.hooksPath`, or every commit will be blocked.
 
