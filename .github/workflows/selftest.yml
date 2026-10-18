@@ -1,8 +1,8 @@
 # Regression gate for the userscript's selection logic.
 #
-# It loads the real bilibili-cdn-optimizer.user.js into a stubbed browser (vm context with a fake
+# It loads the real bilibili-cdn-optimizer/bilibili-cdn-optimizer.user.js into a stubbed browser (vm context with a fake
 # fetch / XHR / localStorage / clock) and asserts behaviour, not structure. Every assertion is
-# written so the pre-3.0 script FAILS it: run `node tools/selftest.js <old copy>` and 16 of the 22
+# written so the pre-3.0 script FAILS it: run `node bilibili-cdn-optimizer/tools/selftest.js <old copy>` and 16 of the 22
 # checks go red. A gate that passes on the broken version would not be a gate.
 name: selftest
 
@@ -19,10 +19,10 @@ jobs:
         with:
           node-version: '22'
       - name: Syntax
-        run: node --check bilibili-cdn-optimizer.user.js
+        run: node --check bilibili-cdn-optimizer/bilibili-cdn-optimizer.user.js
       - name: Selection logic
-        run: node tools/selftest.js
-      - name: Chrome extension copy and manifest
-        run: node tools/check-extension.js
+        run: node bilibili-cdn-optimizer/tools/selftest.js
+      - name: Chrome extension copy, manifest and zip
+        run: node bilibili-cdn-optimizer/tools/build-extension.js --check
       - name: Taiwan extension is built from bilibili-cdn-tw.user.js
-        run: node tools/build-extension-tw.js --check
+        run: node bilibili-cdn-tw/tools/build-extension-tw.js --check
