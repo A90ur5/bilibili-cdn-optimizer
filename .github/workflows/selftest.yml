@@ -24,3 +24,5 @@ jobs:
         run: node tools/selftest.js
       - name: Chrome extension copy and manifest
         run: node tools/check-extension.js
+      - name: Taiwan extension is built from bilibili-cdn-tw.user.js
+        run: node tools/build-extension-tw.js --check
