@@ -1,6 +1,6 @@
 # Bilibili CDN 台灣優化：Chrome 擴充功能版
 
-這個資料夾把 Greasy Fork 上的「Bilibili CDN 台灣優化」（作者 jiyunshi，MIT 授權，Greasy Fork 腳本編號 579776）包成 Chrome / Edge 開發人員模式可以直接載入的擴充功能，不需要 Tampermonkey。
+這個資料夾把 Greasy Fork 上的「Bilibili CDN 台灣優化」（作者 jiyunshi，MIT 授權，[Greasy Fork 腳本編號 579776](https://greasyfork.org/zh-TW/scripts/579776-bilibili-cdn-%E5%8F%B0%E7%81%A3%E5%84%AA%E5%8C%96)）包成 Chrome / Edge 開發人員模式可以直接載入的擴充功能，不需要 Tampermonkey。
 
 它跟倉庫裡的 `chrome-extension/`（SanJerry007 的「B站CDN优选」）是**兩套不同作者、不同做法的程式**。兩者都會改寫影片頁的播放地址，**請不要同時啟用**。
 
