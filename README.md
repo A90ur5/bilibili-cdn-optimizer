@@ -66,6 +66,10 @@ B 站每次播放会从多个 CDN 镜像里给你分配一个。对海外 IP，�
 
 `chrome-extension/` 里的脚本是根目录那份的**逐字节副本**，不是另写的一版。要改仓库本身的话，改根目录那份再 `cp` 过去。`node tools/check-extension.js` 检查两份一致、版本号一致，以及两项一旦写错就会**静默失效**的配置：`"world": "MAIN"`（默认的隔离环境有自己的 `window`，在那里挂钩 fetch / XHR / `__playinfo__`，页面一样都看不到）和 `"run_at": "document_start"`（晚一步，B站内联的 `__playinfo__` 就已经赋值完了）。CI 每次 push 都跑。
 
+### 台湾线路版（另一个独立扩展）
+
+`chrome-extension-tw/` 是把 Greasy Fork 上另一位作者 jiyunshi 的「Bilibili CDN 台灣優化」包成的独立扩展。它跟本脚本是两套不同的程序，都会改写播放地址，**不要同时启用**。安装方式和它跟 Tampermonkey 版的差别见 [chrome-extension-tw/README.md](./chrome-extension-tw/README.md)。
+
 ### 验证生效
 
 - 右下角角标显示的是**播放器此刻真正在用的那个 host**。绿色 `🏆 实测最快CDN: xxx (123.4 Mbps)` 表示这个源是实测选出来的，并且带宽数字可以对；蓝色 `⚠️ 用兜底CDN: ...` 表示还没有实测结果，正在用 PREFER 兜底。
@@ -244,6 +248,8 @@ The script runs with `@grant none` and uses no Tampermonkey API, so `chrome-exte
 3. Click *Load unpacked* and pick the `chrome-extension` folder
 
 Differences from the userscript: it never auto-updates (it runs exactly the code on your disk), it does not run on the login, account and payment subdomains (`passport`, `account`, `pay`, `member`), and it matches `https://` only. The script in `chrome-extension/` is a byte-identical copy of the root one; `node tools/check-extension.js` fails if the copy drifts, if the versions differ, or if `"world": "MAIN"` or `"run_at": "document_start"` is lost, since either one turns every hook into a silent no-op.
+
+`chrome-extension-tw/` is a separate extension built from a different script, jiyunshi's "Bilibili CDN 台灣優化" from Greasy Fork. Both rewrite playback URLs, so do not enable both at once. See [chrome-extension-tw/README.md](./chrome-extension-tw/README.md).
 
 ### Customize
 

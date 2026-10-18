@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Bilibili CDN 台灣優化",
+  "version": "1.3.4",
+  "description": "改善台灣網路觀看 Bilibili 影片時的 CDN 連線穩定度，支援自動切換與卡頓監測",
+  "minimum_chrome_version": "111",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.bilibili.com/video/*",
+        "https://www.bilibili.com/bangumi/play/*",
+        "https://www.bilibili.com/list/*",
+        "https://www.bilibili.com/festival/*",
+        "https://www.bilibili.com/medialist/play/*",
+        "https://www.bilibili.com/watchlater/*",
+        "https://www.bilibili.com/blackboard/*",
+        "https://www.bilibili.com/mooc/*",
+        "https://www.bilibili.com/cheese/*",
+        "https://www.bilibili.com/v/*",
+        "https://www.bilibili.com/documentary/*",
+        "https://www.bilibili.com/variety/*",
+        "https://www.bilibili.com/tv/*",
+        "https://www.bilibili.com/guochuang/*",
+        "https://www.bilibili.com/movie/*",
+        "https://www.bilibili.com/anime/*",
+        "https://www.bilibili.com/match/*"
+      ],
+      "js": [
+        "bilibili-cdn-tw.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    }
+  ]
+}
