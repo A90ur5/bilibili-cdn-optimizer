@@ -22,3 +22,5 @@ jobs:
         run: node --check bilibili-cdn-optimizer.user.js
       - name: Selection logic
         run: node tools/selftest.js
+      - name: Chrome extension copy and manifest
+        run: node tools/check-extension.js

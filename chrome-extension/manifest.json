@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "B站CDN优选 (Bilibili CDN Optimizer)",
+  "version": "3.3.1",
+  "description": "海外看B站不卡:实测每个CDN镜像的持续吞吐,选最快的用。不伪造地址、不需VPN。",
+  "minimum_chrome_version": "111",
+  "content_scripts": [
+    {
+      "matches": ["https://*.bilibili.com/*"],
+      "exclude_matches": [
+        "https://passport.bilibili.com/*",
+        "https://account.bilibili.com/*",
+        "https://pay.bilibili.com/*",
+        "https://member.bilibili.com/*"
+      ],
+      "js": ["bilibili-cdn-optimizer.user.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    }
+  ]
+}
