@@ -48,6 +48,24 @@ B 站每次播放会从多个 CDN 镜像里给你分配一个。对海外 IP，�
    （Tampermonkey 会自动弹出安装页，点「安装」即可；之后会通过 `@updateURL` 自动更新）
 3. 打开任意 B 站视频，右下角出现提示 `✅ CDN已优选: ...` 即成功。第一次打开时还没有实测结果，用的是兜底源；等它测完一轮，之后打开的视频就会直接是绿色的 `🏆 实测最快CDN: ...`。
 
+### 不装 Tampermonkey：作为 Chrome 扩展加载
+
+脚本是 `@grant none`，没用到 Tampermonkey 的任何专属接口，所以 `chrome-extension/` 目录可以直接当未打包扩展加载（Chrome / Edge 111 及以上）：
+
+1. 下载本仓库（`git clone`，或在 GitHub 上点 Code → Download ZIP 再解压）
+2. 打开 `chrome://extensions`（Edge 是 `edge://extensions`），打开「开发者模式」
+3. 点「加载已解压的扩展程序」，选 `chrome-extension` 这个文件夹
+4. 打开任意 B 站视频，右下角出现和上面一样的提示即成功
+
+跟 Tampermonkey 版的区别：
+
+- **不会自动更新。** 跑的永远是你硬盘上那份代码，要更新就重新下载，再在扩展页点刷新。这也是它更安全的地方：没有人能替你推一份新代码进来。
+- **不在登录、账号、支付页面运行**（`passport` / `account` / `pay` / `member` 四个子域）。脚本在那些页面本来就什么都不做，排除掉只是少挂一处钩子。
+- 只匹配 `https://`。
+- 想改 `CFG`，改 `chrome-extension/bilibili-cdn-optimizer.user.js`，改完在扩展页点刷新。
+
+`chrome-extension/` 里的脚本是根目录那份的**逐字节副本**，不是另写的一版。要改仓库本身的话，改根目录那份再 `cp` 过去。`node tools/check-extension.js` 检查两份一致、版本号一致，以及两项一旦写错就会**静默失效**的配置：`"world": "MAIN"`（默认的隔离环境有自己的 `window`，在那里挂钩 fetch / XHR / `__playinfo__`，页面一样都看不到）和 `"run_at": "document_start"`（晚一步，B站内联的 `__playinfo__` 就已经赋值完了）。CI 每次 push 都跑。
+
 ### 验证生效
 
 - 右下角角标显示的是**播放器此刻真正在用的那个 host**。绿色 `🏆 实测最快CDN: xxx (123.4 Mbps)` 表示这个源是实测选出来的，并且带宽数字可以对；蓝色 `⚠️ 用兜底CDN: ...` 表示还没有实测结果，正在用 PREFER 兜底。
@@ -216,6 +234,16 @@ The winner is **persisted across page loads** for 10 minutes, so the next video 
 1. Install a userscript manager: [Tampermonkey](https://www.tampermonkey.net/)
 2. **[Click to install the script](https://raw.githubusercontent.com/SanJerry007/bilibili-cdn-optimizer/main/bilibili-cdn-optimizer.user.js)**; Tampermonkey opens an install page; click *Install*.
 3. Open any Bilibili video; a toast in the bottom-right confirms it works. The toast always names the host the player is **actually** using, so a green `🏆 实测最快CDN: host (123.4 Mbps)` means that host was measured and selected, while a blue `⚠️ 用兜底CDN: host` means no measurement exists yet and the fallback is in use.
+
+### Without Tampermonkey: load it as a Chrome extension
+
+The script runs with `@grant none` and uses no Tampermonkey API, so `chrome-extension/` loads as an unpacked extension in Chrome or Edge 111+:
+
+1. Download this repo (`git clone`, or Code → Download ZIP and unzip)
+2. Open `chrome://extensions` (`edge://extensions` in Edge) and turn on *Developer mode*
+3. Click *Load unpacked* and pick the `chrome-extension` folder
+
+Differences from the userscript: it never auto-updates (it runs exactly the code on your disk), it does not run on the login, account and payment subdomains (`passport`, `account`, `pay`, `member`), and it matches `https://` only. The script in `chrome-extension/` is a byte-identical copy of the root one; `node tools/check-extension.js` fails if the copy drifts, if the versions differ, or if `"world": "MAIN"` or `"run_at": "document_start"` is lost, since either one turns every hook into a silent no-op.
 
 ### Customize
 
