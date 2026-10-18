@@ -1,210 +1,263 @@
-# B站 CDN 优选 · Bilibili CDN Optimizer
+# B站 CDN 優選 · Bilibili CDN Optimizer
 
-> 让海外用户看 B 站不再卡：一个油猴脚本，强制视频走**就近的海外 CDN 节点**，告别 B 站的随机慢调度。
+> 在海外（包含台灣）看 B站影片不再卡：自動挑選比較快的 CDN 節點。repo 裡的兩個工具都能不裝 Tampermonkey，直接以 Chrome 擴充功能載入。
 >
-> A userscript that forces Bilibili videos onto the **nearest overseas CDN**, fixing slow/buffering playback for viewers outside mainland China.
+> Two tools that keep Bilibili videos from buffering outside mainland China, both loadable as Chrome extensions without Tampermonkey.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Userscript](https://img.shields.io/badge/type-userscript-00a1d6.svg)](./bilibili-cdn-optimizer.user.js)
 
+本 repo fork 自 [SanJerry007/bilibili-cdn-optimizer](https://github.com/SanJerry007/bilibili-cdn-optimizer)。除了上游的油猴腳本，另外收錄了 jiyunshi 的台灣優化腳本，兩者都打包成了 Chrome 擴充功能。English version below.
+
 ---
 
-## 中文说明
+## 本 repo 內容
 
-### 这是什么问题？
+| 路徑 | 內容 | 來源 |
+|---|---|---|
+| `bilibili-cdn-optimizer.user.js` | 「B站CDN優選」v3.3.1 油猴腳本 | 上游 SanJerry007，未修改 |
+| `chrome-extension/` | 同一份腳本的 Chrome 擴充功能 | 本 fork 新增，腳本是根目錄那份的逐位元組複本 |
+| `bilibili-cdn-tw/` | 「Bilibili CDN 台灣優化」v1.3.4：原始腳本、Chrome 擴充功能、zip | jiyunshi 發布於 [Greasy Fork](https://greasyfork.org/zh-TW/scripts/579776-bilibili-cdn-%E5%8F%B0%E7%81%A3%E5%84%AA%E5%8C%96)，本 fork 打包 |
+| `tools/` | `selftest.js`（上游的行為測試）、`check-extension.js` 與 `build-extension-tw.js`（本 fork 新增） | |
 
-在海外看 B 站，网页、封面、评论都很快，唯独**视频卡成幻灯片**。原因不在你的网速，而在 B 站的 **CDN 调度**：
+## 該用哪一個？
 
-B 站每次播放会从多个 CDN 镜像里给你分配一个。对海外 IP，它的分配是**随机**的，可能落到：
+兩者都會改寫播放網址，**一次只啟用一個**。
 
-- 🟢 **就近的海外节点**（如 Akamai，遍布全球，自动就近）→ 飞快，上百 Mbps
-- 🟡 较远的海外节点（如某地区腾讯云中转）→ 一般，几十 Mbps
-- 🔴 **中国境内节点**（数据要跨太平洋甚至绕道欧洲进中国）→ 灾难，200ms+ 延迟，反复缓冲
+| | B站CDN優選 | Bilibili CDN 台灣優化 |
+|---|---|---|
+| 做法 | 只在 B站回傳的鏡像之間實測，挑最快的 | B站有給 Akamai 時優先用 Akamai，否則改寫到內建的 B站鏡像清單；預設避開台灣連不到的節點，並停用 WebRTC（P2P / PCDN） |
+| 畫面提示 | 右下角顯示目前使用的 CDN | 沒有彈出提示；狀態在播放器齒輪選單和 `BiliCDN.diag()` |
+| 程式規模 | 約 760 行 | 約 5,500 行 |
+| 說明 | 本頁下方 | [bilibili-cdn-tw/README.md](./bilibili-cdn-tw/README.md) |
 
-抽中红色档，视频就卡。而关键事实是：**那个飞快的就近节点，其实一直都在 B 站返回的镜像列表里**，只是没被优先选中。
+---
 
-### 这个脚本怎么解决？
+## B站CDN優選（SanJerry007）
 
-脚本从两处拿到 B 站给的播放地址列表，在它返回的多个 CDN 镜像里**选一个最快的**给播放器用：一是页面 HTML 里内联的 `window.__playinfo__`（打开视频页时首个视频走这条路），二是 `playurl` 接口的响应（切清晰度、站内跳转时走这条路）。有两种工作模式：
+### 這是什麼問題？
 
-- **`auto` 实测择优（默认，推荐）**：拦到播放地址后，**等播放器自己缓冲够了**再在后台**依次**对每个 CDN 镜像实测**持续吞吐**，选最快的那个。测速会丢掉开头的 256KB 或 500ms（那一段是握手加 TCP 慢启动，量到的是延迟不是带宽），之后才开表。窗口是「最多 1.2 秒或最多 4MB，谁先到算谁」，而在快线路上先到的总是 4MB 那一条（约 26 Mbps 以上就由字节数说了算，200 Mbps 时实际窗口只有 150ms 左右），这是不愿为了凑满 1.2 秒去下几十 MB 的取舍。结果**跨页面保存** 10 分钟，所以下次打开视频时第一帧就用上了最优源，不用等测速。
-- **`prefer` 固定优先（省流量）**：不测速，直接把指定的就近 CDN（默认 Akamai `akamaized.net`）提到第一位。
+在海外看 B站，網頁、封面、留言都很快，偏偏**影片卡成投影片**。原因不在你的網速，而在 B站的 **CDN 調度**：
 
-三层兜底保证视频永远能放：**实测赢家 → PREFER 就近节点 → B 站原始默认**。落选的镜像仍然留在 `backupUrl` 里，播放器自己的故障转移照常可用。只有测速硬失败（403、CORS、超时）的镜像才会被暂时拉黑 5 分钟。
+B站每次播放會從多個 CDN 鏡像中分配一個給你。對海外 IP，這個分配幾乎是**隨機**的，可能落在：
 
-此外还有一层**播放健康看门狗**：它监听 `video` 元素的 `waiting` 事件和缓冲领先量，在视频真的卡起来时重新测一遍。这时会出现两种结论，而两种都有用：要么别的镜像确实更快，它换好并提示你刷新生效；要么**各个镜像一样慢**，那它会明说「不是选错源，是当前线路状况」，省得你以为是 CDN 没选对而白折腾。复测用的流量预算只有常规的四分之一，因为播放器这时本来就在挨饿，不能再抢它带宽。
+- 🟢 **就近的海外節點**（例如遍布全球、自動就近的 Akamai）→ 飛快，上百 Mbps
+- 🟡 較遠的海外節點（例如某地區的騰訊雲中繼）→ 普通，幾十 Mbps
+- 🔴 **中國境內節點**（資料要跨太平洋，甚至繞道歐洲進中國）→ 災難，延遲 200ms 以上，反覆緩衝
 
-- ✅ **不伪造、不篡改地址**：只在 B 站*本来就给你的*合法镜像里择优
-- ✅ **不需要 VPN**：直连即可满速
-- ✅ **零配置开箱即用**
-- ✅ 兼容 Bilibili-Evolved、下载助手等其它脚本，各自独立运行
+抽到紅色那一檔，影片就卡。關鍵在於：**那個飛快的就近節點，其實一直都在 B站回傳的鏡像清單裡**，只是沒被排在第一位。
 
-> 为什么需要它：B 站的 CDN 调度是为「中国大陆用户 + 它自己的带宽成本」优化的，对海外 IP 常常默认给一个较慢的节点，而把最快的就近节点放在备用位；播放器又只用第一个、不会自己比速。这个脚本替播放器补上了「择优」这一步。
+### 這個腳本怎麼解決？
 
-### 安装
+腳本從兩個地方取得 B站給的播放網址清單，再從回傳的多個 CDN 鏡像中**挑一個最快的**交給播放器：一是頁面 HTML 裡內嵌的 `window.__playinfo__`（打開影片頁時，第一部影片走這條路），二是 `playurl` API 的回應（切換畫質、站內換頁時走這條路）。有兩種模式：
 
-1. 先装脚本管理器：[Tampermonkey](https://www.tampermonkey.net/)（Chrome / Edge / Firefox 均可）
-2. 点这里安装脚本 👉 **[bilibili-cdn-optimizer.user.js](https://raw.githubusercontent.com/SanJerry007/bilibili-cdn-optimizer/main/bilibili-cdn-optimizer.user.js)**
-   （Tampermonkey 会自动弹出安装页，点「安装」即可；之后会通过 `@updateURL` 自动更新）
-3. 打开任意 B 站视频，右下角出现提示 `✅ CDN已优选: ...` 即成功。第一次打开时还没有实测结果，用的是兜底源；等它测完一轮，之后打开的视频就会直接是绿色的 `🏆 实测最快CDN: ...`。
+- **`auto` 實測擇優（預設，推薦）**：攔到播放網址後，**等播放器自己緩衝夠了**，才在背景**逐一**實測每個 CDN 鏡像的**持續吞吐量**，挑最快的。測速會丟掉開頭的 256KB 或 500ms（那一段是交握加 TCP 慢啟動，量到的是延遲而不是頻寬），之後才開始計時。測量窗口是「最多 1.2 秒或最多 4MB，先到者為準」；在快的線路上先到的一定是 4MB（約 26 Mbps 以上就由位元組數決定，200 Mbps 時實際窗口只有 150ms 左右），這是不想為了湊滿 1.2 秒而下載幾十 MB 的取捨。結果會**跨頁面保存** 10 分鐘，下次打開影片時第一個畫面就用上最佳來源，不必等測速。
+- **`prefer` 固定優先（省流量）**：不測速，直接把指定的就近 CDN（預設是 Akamai 的 `akamaized.net`）排到第一位。
 
-### 不装 Tampermonkey：作为 Chrome 扩展加载
+三層備援確保影片一定播得出來：**實測勝出者 → PREFER 就近節點 → B站原本的預設**。落選的鏡像仍留在 `backupUrl` 裡，播放器自己的故障切換照常運作。只有測速時硬失敗（403、CORS、逾時）的鏡像，才會被暫時列入黑名單 5 分鐘。
 
-脚本是 `@grant none`，没用到 Tampermonkey 的任何专属接口，所以 `chrome-extension/` 目录可以直接当未打包扩展加载（Chrome / Edge 111 及以上）：
+另外還有一層**播放健康看門狗**：它監聽 `video` 元素的 `waiting` 事件和緩衝領先量，在影片真的卡住時重新測一次。這時會得到兩種結論，兩種都有用：要嘛其他鏡像確實比較快，它會換好並提示你重新整理後生效；要嘛**每個鏡像都一樣慢**，它會直接說「不是選錯來源，是目前線路的狀況」，免得你以為是 CDN 沒選對而白忙一場。複測的流量預算只有平常的四分之一，因為這時播放器本來就吃不飽，不能再跟它搶頻寬。
 
-1. 下载本仓库（`git clone`，或在 GitHub 上点 Code → Download ZIP 再解压）
-2. 打开 `chrome://extensions`（Edge 是 `edge://extensions`），打开「开发者模式」
-3. 点「加载已解压的扩展程序」，选 `chrome-extension` 这个文件夹
-4. 打开任意 B 站视频，右下角出现和上面一样的提示即成功
+- ✅ **不偽造、不竄改網址**：只在 B站*本來就給你的*合法鏡像之間挑選
+- ✅ **不需要 VPN**：直連就能跑滿速
+- ✅ **免設定，裝好就能用**
+- ✅ 可與 Bilibili-Evolved、下載助手等其他腳本並存，各自獨立運作
 
-跟 Tampermonkey 版的区别：
+> 為什麼需要它：B站的 CDN 調度是針對「中國大陸使用者 + 它自己的頻寬成本」最佳化的，對海外 IP 常預設給一個較慢的節點，把最快的就近節點放在備援位；而播放器只用第一個，不會自己比速度。這個腳本替播放器補上「挑選」這一步。
 
-- **不会自动更新。** 跑的永远是你硬盘上那份代码，要更新就重新下载，再在扩展页点刷新。这也是它更安全的地方：没有人能替你推一份新代码进来。
-- **不在登录、账号、支付页面运行**（`passport` / `account` / `pay` / `member` 四个子域）。脚本在那些页面本来就什么都不做，排除掉只是少挂一处钩子。
-- 只匹配 `https://`。
-- 想改 `CFG`，改 `chrome-extension/bilibili-cdn-optimizer.user.js`，改完在扩展页点刷新。
+### 安裝（Tampermonkey）
 
-`chrome-extension/` 里的脚本是根目录那份的**逐字节副本**，不是另写的一版。要改仓库本身的话，改根目录那份再 `cp` 过去。`node tools/check-extension.js` 检查两份一致、版本号一致，以及两项一旦写错就会**静默失效**的配置：`"world": "MAIN"`（默认的隔离环境有自己的 `window`，在那里挂钩 fetch / XHR / `__playinfo__`，页面一样都看不到）和 `"run_at": "document_start"`（晚一步，B站内联的 `__playinfo__` 就已经赋值完了）。CI 每次 push 都跑。
+1. 先安裝腳本管理器 [Tampermonkey](https://www.tampermonkey.net/)（Chrome、Edge、Firefox 都可以）
+2. 點這裡安裝腳本 👉 **[bilibili-cdn-optimizer.user.js](https://raw.githubusercontent.com/SanJerry007/bilibili-cdn-optimizer/main/bilibili-cdn-optimizer.user.js)**
+   Tampermonkey 會自動跳出安裝頁，按「安裝」即可。
+3. 打開任一部 B站影片，右下角出現 `✅ CDN已优选: ...` 的提示就代表成功。第一次打開時還沒有實測結果，用的是備援來源；等它測完一輪，之後打開的影片就會直接顯示綠色的 `🏆 实测最快CDN: ...`。
 
-### 台湾线路版（另一个独立扩展）
+> 這個連結指向上游 SanJerry007 的 repo，腳本裡的 `@updateURL` 也指向上游，所以 Tampermonkey 之後會**自動從上游更新**。不想讓別人的新版自動進來，請改用下面的 Chrome 擴充功能。
 
-`bilibili-cdn-tw/` 是把 Greasy Fork 上另一位作者 jiyunshi 的「Bilibili CDN 台灣優化」包成的独立扩展，原始脚本、扩展文件夹和 zip 都在里面。它跟本脚本是两套不同的程序，都会改写播放地址，**不要同时启用**。安装方式和它跟 Tampermonkey 版的差别见 [bilibili-cdn-tw/README.md](./bilibili-cdn-tw/README.md)。
+### 不裝 Tampermonkey：以 Chrome 擴充功能載入
 
-### 验证生效
+腳本使用 `@grant none`，沒用到任何 Tampermonkey 專屬功能，所以 `chrome-extension/` 資料夾可以直接以未封裝擴充功能載入（Chrome / Edge 111 以上）：
 
-- 右下角角标显示的是**播放器此刻真正在用的那个 host**。绿色 `🏆 实测最快CDN: xxx (123.4 Mbps)` 表示这个源是实测选出来的，并且带宽数字可以对；蓝色 `⚠️ 用兜底CDN: ...` 表示还没有实测结果，正在用 PREFER 兜底。
-- 按 `F12` 打开控制台，能看到 `[B站CDN优选] 测速结果(持续吞吐):` 列出每个 CDN 的实测 Mbps，以及绿字 `最快 -> ...`。如果赢家跟当前在用的不是同一个，会看到 `测速赢家是 X,但本次播放已在用 Y 且换不掉了。已存下,下个视频或刷新后生效`。播放中途是换不掉源的（见 3.3 那节的实测），**脚本不会在改不动的时候声称自己改了。**
+1. 下載本 repo（`git clone`，或在 GitHub 上點 Code → Download ZIP 再解壓縮）
+2. 打開 `chrome://extensions`（Edge 是 `edge://extensions`），開啟「開發人員模式」
+3. 點「載入未封裝項目」，選 `chrome-extension` 這個資料夾
+4. 打開任一部 B站影片，右下角出現跟上面一樣的提示就代表成功
 
-### 验证脚本本身没退化
+跟 Tampermonkey 版的差別：
 
-```bash
-node tools/selftest.js
-```
+- **不會自動更新。** 執行的永遠是你硬碟上那份程式碼；要更新就重新下載，再到擴充功能頁按重新載入。這也是它比較安全的地方：沒有人能替你推一份新程式碼進來。
+- **不在登入、帳號、付款頁面執行**（`passport`、`account`、`pay`、`member` 四個子網域）。腳本在這些頁面本來就不做任何事，排除掉只是少一處攔截。
+- 只套用 `https://`。
+- 想改 `CFG`，就改 `chrome-extension/bilibili-cdn-optimizer.user.js`，改完到擴充功能頁按重新載入。
 
-它把真实的脚本文件加载进一个桩浏览器（假的 fetch / XHR / localStorage / 时钟），断言的是行为不是结构。80 条断言里，53 条在 2.1 上是红的、23 条在 3.2 上是红的、3 条在 3.3 上是红的，所以这个闸门不会对着坏版本打绿灯。CI 每次 push 都跑。
+`chrome-extension/` 裡的腳本是根目錄那份的**逐位元組複本**，不是另外寫的版本。要修改 repo 本身的話，改根目錄那份再 `cp` 過去。`node tools/check-extension.js` 會檢查兩份是否一致、版本號是否相同，以及兩個一旦寫錯就會**無聲失效**的設定：`"world": "MAIN"`（預設的隔離環境有自己的 `window`，在那裡攔截 fetch、XHR、`__playinfo__`，網頁完全看不到）和 `"run_at": "document_start"`（晚一步，B站內嵌的 `__playinfo__` 就已經賦值完了）。
 
-### 克隆这个仓库
+### 確認有在運作
 
-```bash
-git clone https://github.com/SanJerry007/bilibili-cdn-optimizer.git
-cd bilibili-cdn-optimizer
-git config core.hooksPath .githooks     # 要改这个仓库才需要这一步
-```
+- 右下角的提示顯示的是**播放器此刻真正在用的 host**。綠色的 `🏆 实测最快CDN: xxx (123.4 Mbps)` 表示這個來源是實測選出來的，頻寬數字可以對照；藍色的 `⚠️ 用兜底CDN: ...` 表示還沒有實測結果，正在用 PREFER 備援。
+- 按 F12 打開 Console，可以看到 `[B站CDN优选] 测速结果(持续吞吐):` 列出每個 CDN 的實測 Mbps，以及綠字 `最快 -> ...`。如果勝出者跟目前在用的不是同一個，會看到 `测速赢家是 X,但本次播放已在用 Y 且换不掉了。已存下,下个视频或刷新后生效`。播放途中是換不掉來源的（見 3.3 版的實測），**腳本不會在改不動的時候宣稱自己改了。**
 
-**第二行不能省，而且 git 不会替你做。** `core.hooksPath` 是本地仓库配置，不随克隆传递，所以刚克隆下来的副本不会用到这个仓库里的 `.githooks/`。git 这样设计是对的，否则克隆任何一个仓库都等于同意执行它带来的脚本，但代价是这一步必须写在文档里，不然下面那套 fail-closed 的安排永远不会启用。
+（畫面提示和 Console 訊息是腳本內建的簡體中文，這裡照原文列出，方便對照。）
 
-检查工具（PII 扫描、数据边界、破折号闸门）不在这个仓库里：`.githooks/` 的转发脚本从 `git config fleet.guards` 和 `git config fleet.style` 指向的本机 fleet-guards、fleet-style checkout 运行它们。**两项配置任一没设，提交都会被明确挡下**，并说明是哪一项。这是刻意的：找不到检查工具的仓库是一个没有防护的仓库，不是一个没什么可查的仓库，所以它必须大声失败，而不是静默放行。
+### 進階設定
 
-工具只在这里用，不参与脚本本身的运行，所以只想用脚本的话不需要它们。
-
-### 进阶配置
-
-编辑脚本顶部的 `CFG`：
+編輯腳本開頭的 `CFG`：
 
 ```js
 const CFG = {
-  MODE: 'auto',                 // 'auto'=实测择优(默认) | 'prefer'=固定优先,不测速省流量
-  PREFER: ['akamaized.net'],    // 没有实测结果时的兜底优先域,按顺序回退
-  WARMUP_BYTES: 262144,         // 测速丢弃的热身字节数(握手+慢启动,量的是延迟不是带宽)
-  WARMUP_MS: 500,               // 热身最长这么久,与上一条谁先到算谁
-  MEASURE_MS: 1200,             // 热身之后真正计入速度的测量窗口(ms)
-  MAX_BYTES: 4 * 1024 * 1024,   // 单镜像最多拉这么多就收手,快线路上是它决定窗口长度
-  MAX_MIRRORS: 3,               // 一轮最多测几个镜像,丢掉的会写进控制台
-  TEST_COOLDOWN: 60 * 1000,     // 两轮测速最小间隔,防止全失败时无限重测
-  TEST_DELAY_MS: 2000,          // 最早等这么久才开始查播放器缓冲
-  TEST_BUFFER_AHEAD_S: 10,      // 缓冲领先这么多秒就认为播放器吃饱了,可以开测
-  TEST_DEFER_MAX_MS: 45000,     // 等不到缓冲也别无限等
-  HEALTH_WATCH: true,           // 播放卡顿时自动复测,见下文
-  HEALTH_STALL_EVENTS: 3,       // 30 秒窗口内攒够几次 waiting 算卡
-  HEALTH_MIN_BUFFER_S: 3,       // 播放中缓冲领先低于这么多秒算挨饿
-  HEALTH_LOW_SAMPLES: 5,        // 连续挨饿这么多秒才判定
-  HEALTH_PROBE_BYTES: 1048576,  // 复测预算,刻意小,别跟挨饿的播放器抢带宽
-  HEALTH_MAX_CHECKS: 3,         // 每个视频最多复测几次
-  HEALTH_SEEK_GRACE_MS: 4000,   // 拖进度条前后这段时间的卡顿不算(拖动必然触发 waiting)
-  HEALTH_FIRST_FILL_MS: 20000,  // 开头这段时间内若还没健康过就不判卡,但保护有期限
-  TEST_TIMEOUT: 8000,           // 单镜像整体超时(ms)
-  CACHE_TTL: 10 * 60 * 1000,    // 实测结果缓存时长(ms),跨页面保存
-  MIN_GAIN: 1.25,               // 要快过在用的这么多倍才换,避免在噪声上横跳
-  BAN_TTL: 5 * 60 * 1000,       // 测速硬失败的镜像暂时不选的时长(ms)
-  SHOW_TOAST: true,             // 右下角提示,用熟后可关
+  MODE: 'auto',                 // 'auto'=實測擇優(預設) | 'prefer'=固定優先,不測速省流量
+  PREFER: ['akamaized.net'],    // 還沒有實測結果時的備援優先網域,依序退回
+  WARMUP_BYTES: 262144,         // 測速時丟掉的暖身位元組數(交握+慢啟動,量到的是延遲不是頻寬)
+  WARMUP_MS: 500,               // 暖身最長這麼久,與上一項先到者為準
+  MEASURE_MS: 1200,             // 暖身之後真正計入速度的測量窗口(ms)
+  MAX_BYTES: 4 * 1024 * 1024,   // 每個鏡像最多下載這麼多就停,快的線路上由它決定窗口長度
+  MAX_MIRRORS: 3,               // 一輪最多測幾個鏡像,沒測到的會寫進 Console
+  TEST_COOLDOWN: 60 * 1000,     // 兩輪測速的最小間隔,避免全部失敗時無限重測
+  TEST_DELAY_MS: 2000,          // 最早等這麼久才開始檢查播放器緩衝
+  TEST_BUFFER_AHEAD_S: 10,      // 緩衝領先這麼多秒,就認為播放器吃飽了,可以開始測
+  TEST_DEFER_MAX_MS: 45000,     // 等不到緩衝也不要無限等
+  HEALTH_WATCH: true,           // 播放卡頓時自動複測,見下文
+  HEALTH_STALL_EVENTS: 3,       // 30 秒窗口內累積幾次 waiting 算卡住
+  HEALTH_MIN_BUFFER_S: 3,       // 播放中緩衝領先低於這麼多秒算吃不飽
+  HEALTH_LOW_SAMPLES: 5,        // 連續吃不飽這麼多秒才判定
+  HEALTH_PROBE_BYTES: 1048576,  // 複測預算,刻意設小,別跟吃不飽的播放器搶頻寬
+  HEALTH_MAX_CHECKS: 3,         // 每部影片最多複測幾次
+  HEALTH_SEEK_GRACE_MS: 4000,   // 拖動進度條前後這段時間的卡頓不算(拖動一定會觸發 waiting)
+  HEALTH_FIRST_FILL_MS: 20000,  // 開頭這段時間若還沒健康過就不判定卡住,但保護有期限
+  TEST_TIMEOUT: 8000,           // 單一鏡像整體逾時(ms)
+  CACHE_TTL: 10 * 60 * 1000,    // 實測結果快取時間(ms),跨頁面保存
+  MIN_GAIN: 1.25,               // 要比目前使用的快這麼多倍才換,避免在雜訊上來回切換
+  BAN_TTL: 5 * 60 * 1000,       // 測速硬失敗的鏡像暫時不選的時間(ms)
+  SHOW_TOAST: true,             // 右下角提示,熟悉之後可以關掉
 };
 ```
 
-**这个探针能分辨什么、不能分辨什么**（在一条海外直连线路上，对同一对镜像连测两轮的实测结果）：两个都很快的源之间，读数会抖，一轮 289.5 Mbps 下一轮 139.1 Mbps 都有，`MIN_GAIN` 压不住这种两倍级的抖动，所以它在两个快源之间选谁带一定随机性。这不要紧，因为两个都快。它真正要认出来的是**快源和慢源之间那种量级差**（比如就近节点几百 Mbps 对上境内节点的几百 KB/s），那个差距是几十上百倍，任何一轮都分得清。旧探针连前一种都分不清：同一个源两轮读到 17.3 和 40.1 Mbps，而真值在 139 以上。
+**這個探針分得出什麼、分不出什麼**（在一條海外直連線路上，對同一對鏡像連測兩輪的結果）：兩個都很快的來源之間，讀數會跳動，一輪 289.5 Mbps、下一輪 139.1 Mbps 都有可能，`MIN_GAIN` 壓不住這種兩倍等級的跳動，所以在兩個快來源之間選誰帶有一定隨機性。這沒關係，因為兩個都快。它真正要認出來的是**快來源和慢來源之間的數量級差距**（例如就近節點幾百 Mbps 對上境內節點的幾百 KB/s），那是幾十到上百倍的差距，任何一輪都分得出來。舊探針連前一種都分不出來：同一個來源兩輪讀到 17.3 和 40.1 Mbps，而實際值在 139 以上。
 
-流量代价：每 10 分钟最多测一轮，一轮最多 3 个镜像，每个最多 4MB，所以上限是每 10 分钟 12MB。嫌费流量就调小 `MAX_BYTES` 或 `MAX_MIRRORS`（调 `MEASURE_MS` 在快线路上没用，那里先到的是字节数上限），或者干脆切 `prefer` 模式。
+流量成本：每 10 分鐘最多測一輪，一輪最多 3 個鏡像，每個最多 4MB，所以上限是每 10 分鐘 12MB。嫌流量太多可以調小 `MAX_BYTES` 或 `MAX_MIRRORS`（在快的線路上調 `MEASURE_MS` 沒用，先到的是位元組上限），或乾脆改用 `prefer` 模式。
 
-- 想省流量、不想每次测速：把 `MODE` 改成 `'prefer'`，它就只按 `PREFER` 固定优选（Akamai 对绝大多数海外地区已是就近节点）。
-- `auto` 模式下 `PREFER` 仍作为测速完成前和测速失败时的兜底。
+- 想省流量、不想每次測速：把 `MODE` 改成 `'prefer'`，它就只依 `PREFER` 固定挑選（對大多數海外地區來說，Akamai 已經是就近節點）。
+- `auto` 模式下，`PREFER` 仍是測速完成前和測速失敗時的備援。
 
-### 常见问题
+### 常見問題
 
-- **它和 Bilibili-Evolved 冲突吗？** 不冲突。Bilibili-Evolved 没有 CDN 优选功能，这个脚本是独立补充。
-- **会被封号吗？** 不会。脚本只在 B 站合法返回的镜像里换优先级，不涉及任何越权或伪造请求。
-- **番剧 / 港澳台限定 / 4K 也生效吗？** 生效。脚本同时处理 `dash`（普通视频/番剧）和 `durl`（老格式）两种响应。
+- **會跟 Bilibili-Evolved 衝突嗎？** 不會。Bilibili-Evolved 沒有 CDN 挑選功能，這個腳本是獨立的補充。
+- **會被封帳號嗎？** 風險很低：腳本只在 B站合法回傳的鏡像之間調整優先順序，不涉及任何越權或偽造的請求。
+- **番劇、港澳台限定、4K 也有效嗎？** 有效。腳本同時處理 `dash`（一般影片、番劇）和 `durl`（舊格式）兩種回應。
 
-### 3.3.1 修了什么
+### 版本紀錄
 
-3.3 那道「首屏保护」只修了一半。`armed` 这个标志只在缓冲采样那条路上查了，**`waiting` 事件那条路根本没查**，而后者恰恰更容易触发。实测在 3.3 上：视频刚开始填缓冲、缓冲只有 0.4 秒时，三次 `waiting` 就能让它去测速、**拉黑一个健康的源**、并弹出刷新提示。等于 3.2 修掉的「抢首屏带宽」被我自己从后门放了回来。
+#### 3.3.1 修了什麼
 
-顺带把保护写法也改对了。原来是「没健康过就不判卡」，那会留一个更糟的盲区：一个从第一秒就坏的播放永远也健康不了，看门狗对最该管的那种情况反而完全失灵。现在改成**有期限的窗口**（`HEALTH_FIRST_FILL_MS`）：窗口内不判，过了窗口即使从没健康过也要查一次。
+3.3 那道「起播保護」只修了一半。`armed` 這個旗標只在緩衝取樣那條路上檢查，**`waiting` 事件那條路完全沒檢查**，而後者偏偏更容易觸發。在 3.3 上實測：影片剛開始填緩衝、緩衝只有 0.4 秒時，三次 `waiting` 就能讓它跑去測速、**把一個健康的來源列入黑名單**，還跳出重新整理提示。等於 3.2 修掉的「搶起播頻寬」又被我自己從後門放了回來。
 
-还有一处：`armed` 是全局的，换 `video` 元素时不清零。一个健康的贴片广告播放器会替正片的首屏把看门狗提前武装好，然后在正片最需要带宽的几秒里开测。现在换元素等于换一次播放，健康证据清零重来。
+順便把保護的寫法也改對了。原本是「沒健康過就不判定卡住」，這會留下更糟的盲點：一個從第一秒就壞掉的播放永遠不會健康，看門狗對最該管的情況反而完全失靈。現在改成**有期限的窗口**（`HEALTH_FIRST_FILL_MS`）：窗口內不判定，過了窗口即使從沒健康過也要檢查一次。
 
-### 3.3 加了什么
+還有一處：`armed` 是全域的，換 `video` 元素時不會歸零。一個健康的片頭廣告播放器，會替正片的起播把看門狗提前啟動，然後在正片最需要頻寬的那幾秒開始測速。現在換元素就等於換一次播放，健康紀錄歸零重來。
 
-**一条来自真实播放的反馈。** 在这之前，脚本选完源就撒手不管了：视频卡成幻灯片它也不知道，就那么钉着等 10 分钟缓存过期。而实测同一个镜像的吞吐能在二十分钟内从 24 Mbps 变到 196 Mbps，链路的变化比 `CACHE_TTL` 快得多，所以「测一次，钉十分钟」这个前提本身就不成立。
+#### 3.3 加了什麼
 
-现在它监听 `video` 的 `waiting` 事件和缓冲领先量，卡了就用小预算复测，然后分两种情况处理，**两种都会明确告诉你**：别的镜像更快，就换好并提示刷新；各源一样慢，就说清楚问题不在选源。后一种同样重要，不然你会一直以为是 CDN 没挑对。
+**一條來自實際播放的回饋。** 在這之前，腳本選完來源就放手不管：影片卡成投影片它也不知道，就這樣死守 10 分鐘等快取過期。但實測同一個鏡像的吞吐量可以在二十分鐘內從 24 Mbps 變成 196 Mbps，線路的變化比 `CACHE_TTL` 快得多，所以「測一次、守十分鐘」這個前提本身就不成立。
 
-**判定「卡了」这件事，误判的代价比漏判高**，因为误判会在播放器最饿的时候去抢它的带宽。所以设了四道闸：开头 20 秒内若还没见过一次健康缓冲就一概不判卡（否则视频刚开始填缓冲的那几秒缓冲天然就少，会被当成卡，等于把 3.2 刚修掉的问题从后门放回来），两条判定路径都要过这一关；拖进度条前后 4 秒内的卡顿一律不算（拖动必然触发 `waiting`）；缓冲领先量要取**包含播放位置的那一段**，不能一律取最后一段，否则往回拖之后算出来是个大数；视频快播完时缓冲领先本来就接近 0，那不是挨饿。最后两条都是真浏览器实测撞出来的，不是想出来的。
+現在它監聽 `video` 的 `waiting` 事件和緩衝領先量，卡住了就用小預算複測，再分兩種情況處理，**兩種都會明確告訴你**：其他鏡像比較快，就換好並提示重新整理；每個來源都一樣慢，就說清楚問題不在選來源。後者同樣重要，不然你會一直以為是 CDN 沒挑對。
 
-脚本在 iframe 里也会各跑一份，实测一个视频页跑出了 5 份实例。改写地址每个 frame 都该做，但测速和看门狗只在顶层做一次，否则就是 5 套测速抢同一条带宽。
+**判定「卡住」這件事，誤判的代價比漏判高**，因為誤判會在播放器最餓的時候去搶它的頻寬。所以設了四道關卡：開頭 20 秒內若還沒看過一次健康的緩衝，一律不判定卡住（否則影片剛開始填緩衝那幾秒緩衝本來就少，會被當成卡住，等於把 3.2 剛修掉的問題從後門放回來），兩條判定路徑都要通過這一關；拖動進度條前後 4 秒內的卡頓一律不算（拖動一定會觸發 `waiting`）；緩衝領先量要取**包含播放位置的那一段**，不能一律取最後一段，否則往回拖之後會算出很大的數字；影片快播完時緩衝領先量本來就接近 0，那不是吃不飽。最後兩條都是在真實瀏覽器實測時踩到的，不是想出來的。
 
-**同时修正了一句之前的过度承诺。** 3.1 和 3.2 在测速出结果后会打印「已改写播放地址对象」。对象确实改了，但实测表明**播放器根本不看**：把 21 个流对象全部改写成另一个主机、再强制跳转，之后 20 秒里 14 个分片仍然全部来自旧主机。播放器一开始就把主机解析定了。所以那句话虽然字面为真，却暗示了做不到的事，现在改成「已存下，下个视频或刷新后生效」，并且角标那一档是**可以点的**，点了就刷新。
+腳本在 iframe 裡也會各自執行一份，實測一個影片頁跑出了 5 份。改寫網址每個 frame 都該做，但測速和看門狗只在最上層做一次，否則就是 5 套測速在搶同一條頻寬。
 
-### 3.2 修了什么
+**同時修正了一句之前的過度承諾。** 3.1 和 3.2 在測速出結果後會印出「已改寫播放網址物件」。物件確實改了，但實測顯示**播放器根本不看**：把 21 個串流物件全部改寫成另一個主機、再強制跳轉，之後 20 秒內的 14 個分段仍然全部來自舊主機。播放器一開始就把主機定下來了。所以那句話雖然字面上沒錯，卻暗示了做不到的事。現在改成 `已存下,下个视频或刷新后生效`，而且這一檔的提示**可以點**，點了就重新整理。
 
-**测速不再开在 `document-start`。** 3.1 一拦到播放地址就立刻开测，而那正是播放器拼命填首屏缓冲的时刻，两边抢同一条出口带宽。真浏览器实测：同一个 akamai 镜像，页面加载中测出 **5.8 Mbps**，把视频暂停、缓冲满之后再测是 **195 到 281 Mbps**，差四十倍。也就是说它既量不准，又恰好在最需要带宽的那几秒里把带宽抢走。现在改成等 `video` 元素的缓冲领先播放位置 10 秒以上再测，等不到就按 45 秒上限兜底。判据用缓冲领先量而不是固定睡一觉，是因为 4K 和 360P 填满缓冲要的时间差着数量级。
+#### 3.2 修了什麼
 
-晚测不影响效果：赢家本来就是跨页面保存的，这一轮测出来的结果是给下一个视频用的。
+**測速不再在 `document-start` 開始。** 3.1 一攔到播放網址就馬上測速，而那正是播放器拚命填起播緩衝的時候，兩邊搶同一條對外頻寬。在真實瀏覽器實測：同一個 Akamai 鏡像，頁面載入時測出 **5.8 Mbps**，把影片暫停、緩衝滿了之後再測是 **195 到 281 Mbps**，差了四十倍。也就是說它既量不準，又剛好在最需要頻寬的那幾秒把頻寬搶走。現在改成等 `video` 元素的緩衝領先播放位置 10 秒以上才測，等不到就以 45 秒為上限。判斷依據用緩衝領先量而不是固定等一段時間，是因為 4K 和 360P 填滿緩衝所需的時間差了好幾個數量級。
 
-### 3.1 修了什么
+晚點測不影響效果：勝出者本來就會跨頁面保存，這一輪測出的結果是給下一部影片用的。
 
-3.0 发出去之前又做了一轮对抗性复核，结果它自己犯了两个跟 2.x 同类的错，还带出几个新的。
+#### 3.1 修了什麼
 
-**刚修好的音频覆盖，在 `applyWinner()` 里原样又犯了一遍。** 它遍历所有改写过的流、让最后一个说了算，而最后一个是音频。于是角标又变成报音频的 host。现在只认视频流。
+3.0 發布前又做了一輪對抗性複查，結果它自己犯了兩個跟 2.x 同類型的錯，還帶出幾個新的。
 
-**它在改不动的时候声称自己改了。** `fetch` 和 XHR 两条路在 `processData` 返回后立刻把对象序列化成字符串交给播放器，之后再改那个对象播放器一个字都看不见，可代码照样打印「已把播放地址改写为」。这正是 2.x 那个「只报告意图、不报告结果」的毛病换个地方重演。现在按「这份数据播放器还会不会再读」分开处理，改不动就明说改不动。
+**剛修好的音訊覆蓋問題，在 `applyWinner()` 裡原封不動又犯了一次。** 它逐一處理所有改寫過的串流、讓最後一個說了算，而最後一個是音訊。於是右下角提示又變成回報音訊的 host。現在只認影片串流。
 
-**复用同一个 XHR 对象时，无关接口的响应被改了值。** 实例 getter 在 `open()` 到别的地址时不会被摘掉，于是那个响应也被 `JSON.parse` + `JSON.stringify` 转一圈，而 B站的 aid/mid 超出 double 精度，转一圈就变了：测试里 `9007199254740993` 变成 `...992`。现在每次 `open()` 都先摘掉。
+**它在改不動的時候宣稱自己改了。** `fetch` 和 XHR 兩條路在 `processData` 回傳後，會立刻把物件序列化成字串交給播放器，之後再改那個物件，播放器一個字都看不到，但程式照樣印出「已把播放網址改寫為」。這正是 2.x 那個「只回報意圖、不回報結果」的毛病換個地方重演。現在依「這份資料播放器還會不會再讀」分開處理，改不動就明說改不動。
 
-**一段很短的片源会让所有健康镜像被拉黑。** 探针把「测不出来」和「硬失败」都返回 -1。现在分成三态，只有硬失败才拉黑。
+**重複使用同一個 XHR 物件時，無關 API 的回應被改了值。** `open()` 到別的網址時，實例上的 getter 不會被拿掉，於是那個回應也被 `JSON.parse` + `JSON.stringify` 轉了一圈，而 B站的 aid、mid 超出 double 精度，轉一圈就變了：測試裡 `9007199254740993` 變成 `...992`。現在每次 `open()` 都會先拿掉。
 
-**全部镜像失败时会无限重测。** `pickBest` 在全员被拉黑时会清空黑名单，清完下一个载荷又重测一轮，每个载荷来一遍。加了 `TEST_COOLDOWN`。
+**一段很短的影片來源，會讓所有健康的鏡像被列入黑名單。** 探針把「測不出來」和「硬失敗」都回傳 -1。現在分成三種狀態，只有硬失敗才列入黑名單。
 
-**缓存里存着别处的赢家会把测速压制 10 分钟。** 之前只看缓存新不新，不看那个 host 这个视频到底提不提供。
+**所有鏡像都失敗時會無限重測。** `pickBest` 在所有鏡像都被列入黑名單時會清空黑名單，清完下一個 playurl 回應又重測一輪，每個回應來一次。加了 `TEST_COOLDOWN`。
 
-还有两处小的：坏掉或缺字段的缓存会让角标显示 `NaN Mbps`，现在校验后丢弃；别的脚本若把 `XMLHttpRequest` 换成子类，原型描述符会是 `undefined`，之后每次读属性都抛异常把播放打死，现在拿不到就整个不挂钩 XHR。
+**快取裡存著別處的勝出者，會把測速壓住 10 分鐘。** 之前只看快取新不新，不看那個 host 這部影片到底有沒有提供。
 
-### 3.0 修了什么
+還有兩個小地方：壞掉或缺欄位的快取會讓提示顯示 `NaN Mbps`，現在檢查後丟棄；其他腳本若把 `XMLHttpRequest` 換成子類別，原型描述子會是 `undefined`，之後每次讀屬性都會拋出例外、讓播放整個掛掉，現在拿不到就整個不攔截 XHR。
 
-2.x 在实测中被发现「提示说选了最优源，但播放器拿到的一直是兜底源」。根子有四处：
+#### 3.0 修了什麼
 
-**测速结果从来没被用上。** 选源是同步做完的，测速是之后才异步跑的，而拿到结果只写了个变量，没有任何一行回头改地址。更要命的是那个变量随页面销毁，所以每打开一个视频页它都是空的，选源永远落到兜底。现在赢家存进 `localStorage` 跨页面复用，并且测速一出结果就把当前这批地址再改写一次。
+2.x 在實測中被發現「提示說選了最佳來源，但播放器拿到的一直是備援來源」。根本原因有四個：
 
-**探针量的是延迟不是带宽。** 只下 256KB，整个落在握手和 TCP 慢启动里。实测两个源读数分别是 3.1 和 16.4 Mbps，同一个源换一轮又变成 5.5 和 36.3，十倍级噪声，分不出高下。改成丢弃热身段、只统计稳定段之后，同样两个源读到 148 和 266 Mbps，与持续下载量到的数量级一致。
+**測速結果從來沒被用上。** 選來源是同步完成的，測速是之後才非同步執行的，拿到結果後只寫進一個變數，沒有任何一行回頭改網址。更糟的是那個變數會隨頁面一起消失，所以每打開一個影片頁它都是空的，選來源永遠落到備援。現在勝出者存進 `localStorage` 跨頁面重複使用，而且測速一出結果就把目前這批網址再改寫一次。
 
-**正常播放会误封好节点。** 旧判据是「15 秒内又来了一次 playurl 就说明上个 CDN 播不动」，但内联 `__playinfo__` 之后播放器本来就会再要一次，切清晰度、分P、站内跳转也都在这个窗口里。这条判据整个删掉，只保留有证据的那种失败。
+**探針量的是延遲而不是頻寬。** 只下載 256KB，整個落在交握和 TCP 慢啟動裡。實測兩個來源分別讀到 3.1 和 16.4 Mbps，同一個來源換一輪又變成 5.5 和 36.3，十倍等級的雜訊，分不出高下。改成丟掉暖身段、只統計穩定段之後，同樣兩個來源讀到 148 和 266 Mbps，跟持續下載量到的數量級一致。
 
-**角标报的是音频流。** `dash.video` 之后还要处理 `audio` / `dolby` / `flac`，每个都覆盖一次记录，所以提示和日志报的是最后那条音频流的 host。
+**正常播放會誤封好節點。** 舊的判斷依據是「15 秒內又來了一次 playurl，就代表上一個 CDN 播不動」，但內嵌的 `__playinfo__` 之後播放器本來就會再要一次，切換畫質、分P、站內換頁也都在這個時間窗口內。這條依據整個刪掉，只保留有證據的那種失敗。
 
-另外，同一份 XHR 响应被读第二次时会把整套逻辑重跑一遍，现在按原始字符串记一次结果；`fetch` 钩子重建响应时会带走对不上的 `content-length`，现在删掉。
+**右下角提示回報的是音訊串流。** `dash.video` 之後還要處理 `audio`、`dolby`、`flac`，每個都覆蓋一次紀錄，所以提示和記錄回報的是最後那條音訊串流的 host。
 
+另外，同一份 XHR 回應被讀第二次時會把整套邏輯重跑一遍，現在依原始字串只記一次結果；`fetch` 攔截重建回應時會帶著對不上的 `content-length`，現在刪掉了。
+
+---
+
+## Bilibili CDN 台灣優化（jiyunshi）
+
+`bilibili-cdn-tw/` 收錄 jiyunshi 發布在 Greasy Fork 上的 [Bilibili CDN 台灣優化](https://greasyfork.org/zh-TW/scripts/579776-bilibili-cdn-%E5%8F%B0%E7%81%A3%E5%84%AA%E5%8C%96)，並打包成可以直接載入的 Chrome 擴充功能：
+
+- `bilibili-cdn-tw.user.js`：原始腳本，一字未改
+- `chrome-extension-tw/`：擴充功能本體，在開發人員模式下「載入未封裝項目」選這個資料夾
+- `chrome-extension-tw.zip`：同一份擴充功能加上說明，可以單獨下載
+
+它沒有彈出提示，狀態在播放器齒輪選單裡的「攔截修改影片 CDN」，或在 Console 輸入 `BiliCDN.diag()` 查看。安裝方式、跟 Tampermonkey 版的差別，以及擴充功能頁「錯誤」清單裡常見訊息的說明，見 [bilibili-cdn-tw/README.md](./bilibili-cdn-tw/README.md)。
+
+---
+
+## 開發
+
+### 複製這個 repo
+
+```bash
+git clone https://github.com/A90ur5/bilibili-cdn-optimizer.git
+cd bilibili-cdn-optimizer
+```
+
+`.githooks/` 是上游留下的提交前檢查，會從 `git config fleet.guards` 和 `git config fleet.style` 指向的本機 fleet-guards、fleet-style checkout 執行個資掃描、資料邊界和破折號檢查。這些工具不在本 repo 裡，**兩項設定只要有一項沒設，提交就會被擋下**（這是刻意的 fail-closed 設計）。所以手邊沒有這兩套工具的話，不要執行 `git config core.hooksPath .githooks`，否則每次提交都會失敗。只想使用腳本或擴充功能的話，完全不需要它們。
+
+### 檢查
+
+```bash
+node tools/selftest.js                     # 「B站CDN優選」腳本的行為測試
+node tools/check-extension.js              # chrome-extension/ 的複本與 manifest 沒有走樣
+node tools/build-extension-tw.js --check   # bilibili-cdn-tw/ 的擴充功能與 zip 跟原始腳本一致
+```
+
+`selftest.js` 把真實的腳本檔載入一個模擬瀏覽器（假的 fetch、XHR、localStorage、時鐘），驗證的是行為而不是結構。80 項斷言中，有 53 項在 2.1 上會失敗、23 項在 3.2 上會失敗、3 項在 3.3 上會失敗，所以這道關卡不會對壞掉的版本亮綠燈。後兩項分別保護兩個擴充功能，細節見上面各自的說明。CI 在每次 push 和 PR 都會跑這三項。
+
+修改 `bilibili-cdn-tw/bilibili-cdn-tw.user.js` 之後，執行 `node tools/build-extension-tw.js` 重新產生擴充功能和 zip。
+
+## 授權
+
+本 repo 依 [MIT](./LICENSE) 授權（LICENSE 檔的著作權人為 SanJerry007）。`bilibili-cdn-tw/` 裡的「Bilibili CDN 台灣優化」腳本及由它產生的檔案，著作權屬於 jiyunshi，依該腳本標頭宣告的 MIT 授權收錄。
 
 ---
 
 ## English
+
+This repository is a fork of [SanJerry007/bilibili-cdn-optimizer](https://github.com/SanJerry007/bilibili-cdn-optimizer). It holds two independent tools that keep Bilibili videos from buffering outside mainland China. Both rewrite playback URLs, so **enable only one at a time**.
+
+| Path | What | Source |
+|---|---|---|
+| `bilibili-cdn-optimizer.user.js`, `chrome-extension/` | "B站CDN优选" v3.3.1: measures the mirrors Bilibili returns and promotes the fastest | SanJerry007, unmodified; the extension is this fork's packaging |
+| `bilibili-cdn-tw/` | "Bilibili CDN 台灣優化" v1.3.4: tuned for Taiwan, prefers Akamai when Bilibili offers it and otherwise rewrites to a built-in list of Bilibili mirrors; blocks WebRTC (P2P/PCDN) | jiyunshi on [Greasy Fork](https://greasyfork.org/zh-TW/scripts/579776-bilibili-cdn-%E5%8F%B0%E7%81%A3%E5%84%AA%E5%8C%96), packaged by this fork. See [bilibili-cdn-tw/README.md](./bilibili-cdn-tw/README.md) |
+
+The rest of this section covers "B站CDN优选".
 
 ### The problem
 
@@ -239,6 +292,8 @@ The winner is **persisted across page loads** for 10 minutes, so the next video 
 2. **[Click to install the script](https://raw.githubusercontent.com/SanJerry007/bilibili-cdn-optimizer/main/bilibili-cdn-optimizer.user.js)**; Tampermonkey opens an install page; click *Install*.
 3. Open any Bilibili video; a toast in the bottom-right confirms it works. The toast always names the host the player is **actually** using, so a green `🏆 实测最快CDN: host (123.4 Mbps)` means that host was measured and selected, while a blue `⚠️ 用兜底CDN: host` means no measurement exists yet and the fallback is in use.
 
+The install link and the script's `@updateURL` both point at the upstream SanJerry007 repository, so Tampermonkey will auto-update from upstream. Use the Chrome extension below if you do not want that.
+
 ### Without Tampermonkey: load it as a Chrome extension
 
 The script runs with `@grant none` and uses no Tampermonkey API, so `chrome-extension/` loads as an unpacked extension in Chrome or Edge 111+:
@@ -249,8 +304,6 @@ The script runs with `@grant none` and uses no Tampermonkey API, so `chrome-exte
 
 Differences from the userscript: it never auto-updates (it runs exactly the code on your disk), it does not run on the login, account and payment subdomains (`passport`, `account`, `pay`, `member`), and it matches `https://` only. The script in `chrome-extension/` is a byte-identical copy of the root one; `node tools/check-extension.js` fails if the copy drifts, if the versions differ, or if `"world": "MAIN"` or `"run_at": "document_start"` is lost, since either one turns every hook into a silent no-op.
 
-`bilibili-cdn-tw/` holds a separate extension built from a different script, jiyunshi's "Bilibili CDN 台灣優化" from Greasy Fork, together with that script and a ready-made zip. Both rewrite playback URLs, so do not enable both at once. See [bilibili-cdn-tw/README.md](./bilibili-cdn-tw/README.md).
-
 ### Customize
 
 Edit the `CFG` block at the top of the script. The two you are most likely to touch:
@@ -260,14 +313,18 @@ MODE: 'auto',                 // 'auto' = measure and pick | 'prefer' = fixed or
 PREFER: ['akamaized.net'],    // ordered fallback used until a measurement exists
 ```
 
-### Run the tests
+### Run the checks
 
 ```bash
-node tools/selftest.js
+node tools/selftest.js                     # behaviour tests for the "B站CDN优选" script
+node tools/check-extension.js              # chrome-extension/ copy and manifest
+node tools/build-extension-tw.js --check   # bilibili-cdn-tw/ extension and zip match the original script
 ```
 
-Loads the real userscript into a stubbed browser and asserts behaviour. Of the 80 assertions, 53 fail on 2.1, 23 on 3.2 and 3 on 3.3, which is what makes the gate meaningful.
+`selftest.js` loads the real userscript into a stubbed browser and asserts behaviour. Of the 80 assertions, 53 fail on 2.1, 23 on 3.2 and 3 on 3.3, which is what makes the gate meaningful. CI runs all three on every push and pull request.
+
+`.githooks/` comes from upstream and needs the upstream author's local fleet-guards and fleet-style tools; without them, do not set `core.hooksPath`, or every commit will be blocked.
 
 ### License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE) (copyright SanJerry007 in the LICENSE file). The "Bilibili CDN 台灣優化" script in `bilibili-cdn-tw/` and the files generated from it are jiyunshi's work, included under the MIT license declared in its header.
