@@ -68,7 +68,7 @@ B 站每次播放会从多个 CDN 镜像里给你分配一个。对海外 IP，�
 
 ### 台湾线路版（另一个独立扩展）
 
-`chrome-extension-tw/` 是把 Greasy Fork 上另一位作者 jiyunshi 的「Bilibili CDN 台灣優化」包成的独立扩展。它跟本脚本是两套不同的程序，都会改写播放地址，**不要同时启用**。安装方式和它跟 Tampermonkey 版的差别见 [chrome-extension-tw/README.md](./chrome-extension-tw/README.md)。
+`bilibili-cdn-tw/` 是把 Greasy Fork 上另一位作者 jiyunshi 的「Bilibili CDN 台灣優化」包成的独立扩展，原始脚本、扩展文件夹和 zip 都在里面。它跟本脚本是两套不同的程序，都会改写播放地址，**不要同时启用**。安装方式和它跟 Tampermonkey 版的差别见 [bilibili-cdn-tw/README.md](./bilibili-cdn-tw/README.md)。
 
 ### 验证生效
 
@@ -249,7 +249,7 @@ The script runs with `@grant none` and uses no Tampermonkey API, so `chrome-exte
 
 Differences from the userscript: it never auto-updates (it runs exactly the code on your disk), it does not run on the login, account and payment subdomains (`passport`, `account`, `pay`, `member`), and it matches `https://` only. The script in `chrome-extension/` is a byte-identical copy of the root one; `node tools/check-extension.js` fails if the copy drifts, if the versions differ, or if `"world": "MAIN"` or `"run_at": "document_start"` is lost, since either one turns every hook into a silent no-op.
 
-`chrome-extension-tw/` is a separate extension built from a different script, jiyunshi's "Bilibili CDN 台灣優化" from Greasy Fork. Both rewrite playback URLs, so do not enable both at once. See [chrome-extension-tw/README.md](./chrome-extension-tw/README.md).
+`bilibili-cdn-tw/` holds a separate extension built from a different script, jiyunshi's "Bilibili CDN 台灣優化" from Greasy Fork, together with that script and a ready-made zip. Both rewrite playback URLs, so do not enable both at once. See [bilibili-cdn-tw/README.md](./bilibili-cdn-tw/README.md).
 
 ### Customize
 

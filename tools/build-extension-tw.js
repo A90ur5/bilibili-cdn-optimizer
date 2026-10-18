@@ -1,7 +1,11 @@
-// Builds chrome-extension-tw/ from bilibili-cdn-tw.user.js (the Greasy Fork "Bilibili CDN 台灣優化" script).
+// Builds bilibili-cdn-tw/chrome-extension-tw/ and bilibili-cdn-tw/chrome-extension-tw.zip from
+// bilibili-cdn-tw/bilibili-cdn-tw.user.js (the Greasy Fork "Bilibili CDN 台灣優化" script).
 //
-//   node tools/build-extension-tw.js           regenerate manifest.json and bilibili-cdn-tw.js
-//   node tools/build-extension-tw.js --check   fail if either file on disk differs from a fresh build
+//   node tools/build-extension-tw.js           regenerate manifest.json, bilibili-cdn-tw.js and the zip
+//   node tools/build-extension-tw.js --check   fail if any of them on disk differs from a fresh build
+//
+// The zip is committed so it can be downloaded straight from GitHub. It is written uncompressed with
+// fixed timestamps, so the same inputs always give the same bytes and --check can compare it.
 //
 // Unlike chrome-extension/, the output cannot be a plain copy. Tampermonkey does two things for this
 // script that a Chrome content script does not, and both have to be reproduced here:
@@ -15,10 +19,12 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const ROOT = path.join(__dirname, '..');
-const SRC = path.join(ROOT, 'bilibili-cdn-tw.user.js');
-const OUT = path.join(ROOT, 'chrome-extension-tw');
+const DIR = path.join(__dirname, '..', 'bilibili-cdn-tw');
+const SRC = path.join(DIR, 'bilibili-cdn-tw.user.js');
+const EXT = 'chrome-extension-tw';
 const OUT_JS = 'bilibili-cdn-tw.js';
+const ZIP = EXT + '.zip';
+const README = 'README.md';
 const SHIMMED = ['GM_getValue', 'GM_setValue', 'GM_deleteValue', 'GM_registerMenuCommand', 'GM_info', 'unsafeWindow'];
 
 function fail(msg) { console.error('build-extension-tw: ' + msg); process.exit(1); }
@@ -110,23 +116,66 @@ ${src}// ======== end of bilibili-cdn-tw.user.js ========
   return { manifest: JSON.stringify(manifest, null, 2) + '\n', js };
 }
 
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+// Minimal zip: stored (no compression), DOS date fixed at 1980-01-01, entries in the given order.
+function zip(entries) {
+  const locals = [], centrals = [];
+  let offset = 0;
+  for (const [name, text] of entries) {
+    const data = Buffer.from(text, 'utf8'), fname = Buffer.from(name, 'utf8'), crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(10, 4); local.writeUInt16LE(0x0800, 6);
+    local.writeUInt16LE(0, 8); local.writeUInt16LE(0, 10); local.writeUInt16LE(0x21, 12);
+    local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(fname.length, 26); local.writeUInt16LE(0, 28);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(10, 6);
+    central.writeUInt16LE(0x0800, 8); central.writeUInt16LE(0, 10); central.writeUInt16LE(0, 12);
+    central.writeUInt16LE(0x21, 14); central.writeUInt32LE(crc, 16); central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24); central.writeUInt16LE(fname.length, 28); central.writeUInt32LE(offset, 42);
+    locals.push(local, fname, data);
+    centrals.push(central, fname);
+    offset += local.length + fname.length + data.length;
+  }
+  const cd = Buffer.concat(centrals), end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cd, end]);
+}
+
 const src = fs.readFileSync(SRC, 'utf8');
 if (!src.endsWith('\n')) fail(SRC + ' must end with a newline');
 const out = build(src);
 // compiles only, never runs: catches a wrapper that no longer parses around a new upstream version
 try { new vm.Script(out.js, { filename: OUT_JS }); } catch (e) { fail('generated script does not parse: ' + e.message); }
 
-const files = { 'manifest.json': out.manifest, [OUT_JS]: out.js };
+const readme = fs.readFileSync(path.join(DIR, README), 'utf8');
+const files = {
+  [EXT + '/manifest.json']: Buffer.from(out.manifest, 'utf8'),
+  [EXT + '/' + OUT_JS]: Buffer.from(out.js, 'utf8'),
+  // the zip carries the README too, for anyone who downloads only the zip
+  [ZIP]: zip([[EXT + '/manifest.json', out.manifest], [EXT + '/' + OUT_JS, out.js], [README, readme]]),
+};
 if (process.argv.includes('--check')) {
   let bad = 0;
   for (const [f, want] of Object.entries(files)) {
-    const p = path.join(OUT, f);
-    const have = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
-    if (have === want) console.log('  PASS  chrome-extension-tw/' + f + ' is up to date');
-    else { bad++; console.log('  FAIL  chrome-extension-tw/' + f + (have === null ? ' is missing' : ' is stale') + '  <- run: node tools/build-extension-tw.js'); }
+    const p = path.join(DIR, f);
+    const have = fs.existsSync(p) ? fs.readFileSync(p) : null;
+    if (have && have.equals(want)) console.log('  PASS  bilibili-cdn-tw/' + f + ' is up to date');
+    else { bad++; console.log('  FAIL  bilibili-cdn-tw/' + f + (have === null ? ' is missing' : ' is stale') + '  <- run: node tools/build-extension-tw.js'); }
   }
   process.exit(bad ? 1 : 0);
 }
-fs.mkdirSync(OUT, { recursive: true });
-for (const [f, data] of Object.entries(files)) fs.writeFileSync(path.join(OUT, f), data);
-console.log('wrote chrome-extension-tw/manifest.json and chrome-extension-tw/' + OUT_JS);
+fs.mkdirSync(path.join(DIR, EXT), { recursive: true });
+for (const [f, data] of Object.entries(files)) fs.writeFileSync(path.join(DIR, f), data);
+console.log('wrote ' + Object.keys(files).map(f => 'bilibili-cdn-tw/' + f).join(', '));
